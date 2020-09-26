@@ -1,0 +1,54 @@
+#ifndef FTP_H
+#define FTP_H
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <strings.h>
+#include <unistd.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <fcntl.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+#include <stdbool.h>
+
+#define IP "172.20.10.2"
+
+typedef struct FTPClient
+{
+	int cli_sock;		//命令通道描述符
+	int cli_pasv;		//数据通道描述符
+	short port;			//端口号
+	char ip[16];		//服务器ip
+	char path[256];		//服务器当前路径
+	int status;			//返回码
+	char buf[256];		//执行结果
+}FTPClient;
+
+
+
+typedef struct sockaddr* SP;
+
+enum{
+	BYE=0,ON=1,LS_L,PWD,MKD,CWD,STOR,RETR
+};
+
+//创建FTP客户端对象
+FTPClient* create_FTPClient(void);
+{
+
+}
+
+//销毁FTP客户端对象
+//向服务器发送客户端命令
+//向服务器发送密码
+//pwd
+//cd
+//mkdir
+//ls
+//put
+//get
+
+#endif//FTP_H

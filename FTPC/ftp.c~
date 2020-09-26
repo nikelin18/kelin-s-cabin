@@ -1,0 +1,353 @@
+#include "ftp.h"
+
+int ftp_login(int cli_sock)
+{
+	printf("正在连接服务器");
+	/*for(int i=0;i<2;i++)
+	{	
+		printf(".");
+		fflush(stdout);
+		sleep(1);
+	}*/
+	
+	char buf[4096] = {};
+	size_t buf_size = sizeof(buf),ret = 0;
+
+	recv(cli_sock,buf,buf_size,0);
+	sscanf(buf,"%d",&ret);
+	if(ret!=220)
+	{
+		printf("\b\r连接失败,请稍后再试\n");
+		return EXIT_FAILURE;
+	}
+	printf("\b\r连接服务器成功\n");
+
+	char name[20] = {};
+	printf("请输入用户名：");
+	scanf("%s",name);
+	sprintf(buf,"USER %s\n",name);
+	send(cli_sock,buf,strlen(buf),0);
+
+	recv(cli_sock,buf,buf_size,0);
+	sscanf(buf,"%d",&ret);
+	if(ret!=331)
+	{
+		printf("用户名输入错误\n");
+		return EXIT_FAILURE;
+	}
+
+	char pass[17] = {};
+	printf("请输入密码：");
+	scanf("%s",pass);
+	sprintf(buf,"PASS %s\n",pass);
+	send(cli_sock,buf,strlen(buf),0);
+
+	recv(cli_sock,buf,buf_size,0);
+	sscanf(buf,"%d",&ret);
+	if(ret!=230)
+	{
+		printf("请检查用户名和密码\n");
+		return EXIT_FAILURE;
+	}
+	printf("登录成功\n");
+	printf("---------------------\n");
+	return 0;
+}
+
+int ftp_pasv(int cli_sock)
+{
+	char buf[4096] = {};
+	size_t buf_size = sizeof(buf),ret;
+	
+	sprintf(buf,"PASV\n");
+	send(cli_sock,buf,strlen(buf),0);
+	recv(cli_sock,buf,buf_size,0);
+	sscanf(buf,"%d",&ret);
+	if(ret!=227)
+	{
+		printf("无法进入被动模式\n");
+		return EXIT_FAILURE;
+	}
+	sscanf(buf,"227 Entering Passive Mode (%hhu,%hhu,%hhu,%hhu,%hhu,%hhu",&ip1,&ip2,&ip3,&ip4,&port1,&port2);	
+}
+
+int ftp_command(char* cmd)
+{
+	if(0 == strcmp("LIST",cmd)) return LS_L;
+	if(0 == strcmp("MKD",cmd)) return MKD;
+	if(0 == strcmp("CWD",cmd)) return CWD;
+	if(0 == strcmp("PWD",cmd)) return PWD;
+	if(0 == strcmp("STOR",cmd)) return STOR;
+	if(0 == strcmp("RETR",cmd)) return RETR;
+	return 0;
+}
+int ftp_PWD(int cli_sock)
+{
+	char buf[4096] = {};
+	size_t buf_size = sizeof(buf),ret;
+	sprintf(buf,"PWD\n");
+	send(cli_sock,buf,strlen(buf),0);
+	
+	recv(cli_sock,buf,buf_size,0);
+	sscanf(buf,"%d",&ret);
+	if(ret!=257)
+	{
+		printf("fatal error\n");
+		return EXIT_FAILURE;
+	}
+	
+	strcpy(buf,&buf[4]);
+	for(int i=0;i<strlen(buf);i++)
+	{
+		if(buf[i]!='"')printf("%c",buf[i]);
+	}
+
+	return 0;
+}
+
+int ftp_CWD(int cli_sock,const char* path)
+{
+	char buf[4096] = {};
+	size_t buf_size = sizeof(buf),ret;
+
+	sprintf(buf,"CWD %s\n",path);
+	send(cli_sock,buf,strlen(buf),0);
+	
+	recv(cli_sock,buf,buf_size,0);
+	sscanf(buf,"%d",&ret);
+	if(ret!=250)
+	{
+		printf("无效路径\n");
+		return EXIT_FAILURE;
+	}
+	
+	printf("进入目录%s\n",path);
+	
+	return 0;
+}
+
+int ftp_MKD(int cli_sock,const char* path)
+{
+	char buf[4096] = {};
+	size_t buf_size = sizeof(buf),ret;
+
+	sprintf(buf,"MKD %s\n",path);
+	send(cli_sock,buf,strlen(buf),0);
+	
+	recv(cli_sock,buf,buf_size,0);
+	
+	sscanf(buf,"%d",&ret);
+	if(ret!=257)
+	{
+		printf("创建失败\n");
+		return EXIT_FAILURE;
+	}
+	
+	strcpy(buf,&buf[4]);
+	int flag = 1;
+	for(int i=0;i<strlen(buf);i++)
+	{
+		if(buf[i] == '"')
+		{
+			if(flag)
+			{
+				flag = 0;
+				continue;
+			}
+			break;
+		}
+		printf("%c",buf[i]);
+	}	
+	printf(" 已创建成功\n");
+	
+	return 0;
+}
+
+int ftp_LS_L(int cli_sock,struct sockaddr_in* addr,const char* path)
+{				
+	char buf[4096] = {};
+	size_t buf_size = sizeof(buf),ret;	
+	
+	ftp_pasv(cli_sock);
+	char ip[20] = {};
+	sprintf(ip,"%hhu.%hhu.%hhu.%hhu",ip1,ip2,ip3,ip4);
+	
+	struct sockaddr_in cli_addr = *addr;
+	short port = port1*256+port2;
+	int cli_pasv = socket(AF_INET,SOCK_STREAM,0);
+	cli_addr.sin_port = htons(port);
+	cli_addr.sin_addr.s_addr = inet_addr(ip);
+	socklen_t addrlen = sizeof(cli_addr);
+	
+	if(connect(cli_pasv,(SP)&cli_addr,addrlen))
+	{
+		perror("connect");
+		return EXIT_FAILURE;
+	}
+
+	if(0 == strcmp(path,"-al")) sprintf(buf,"LIST -al\n");  
+	else sprintf(buf,"LIST\n");
+	
+	send(cli_sock,buf,strlen(buf),0);
+	
+	bzero(buf,buf_size);
+	recv(cli_sock,buf,buf_size,0);
+
+	sscanf(buf,"%d",&ret);
+	if(ret!=150)
+	{	
+		printf("功能正在升级\n");
+		return EXIT_FAILURE;
+	}
+	
+	bzero(buf,buf_size);
+	recv(cli_pasv,buf,buf_size,0);
+	printf("%s\n",buf);
+
+	
+	bzero(buf,buf_size);
+	recv(cli_sock,buf,buf_size,0);
+	sscanf(buf,"%d",&ret);
+	if(ret!=226)
+	{
+		printf("fatal error");
+		return EXIT_FAILURE;
+	}
+	printf("--------------------------------------------\n");
+	close(cli_pasv);
+	return 0;
+}
+int ftp_STOR(int cli_sock,struct sockaddr_in* addr,const char* path)
+{
+	if(access(path, F_OK))
+	{
+		printf("文件不存在\n");
+		return EXIT_FAILURE;
+	}
+	
+	char buf[4096] = {};
+	size_t buf_size = sizeof(buf),ret;
+	
+	ftp_pasv(cli_sock);
+	char ip[20] = {};
+	sprintf(ip,"%hhu.%hhu.%hhu.%hhu",ip1,ip2,ip3,ip4);
+	
+	struct sockaddr_in cli_addr = *addr;
+	short port = port1*256+port2;
+	int cli_pasv = socket(AF_INET,SOCK_STREAM,0);
+	cli_addr.sin_port = htons(port);
+	cli_addr.sin_addr.s_addr = inet_addr(ip);
+	socklen_t addrlen = sizeof(cli_addr);
+	
+	if(connect(cli_pasv,(SP)&cli_addr,addrlen))
+	{
+		perror("connect");
+		return EXIT_FAILURE;
+	}
+
+	
+	sprintf(buf,"STOR %s\n",path);
+	printf("%s上传中\n",path);
+	
+	send(cli_sock,buf,strlen(buf),0);
+	int fd = open(path,O_RDONLY);
+	if(0 > fd)
+	{
+		perror("open");
+		return EXIT_FAILURE;
+	}
+	
+	while(ret = read(fd,buf,buf_size))
+	{
+		send(cli_pasv,buf,ret,0);
+	}
+
+	close(fd);
+	close(cli_pasv);
+
+	bzero(buf,buf_size);
+	recv(cli_sock,buf,buf_size,0);
+	sscanf(buf,"%d",&ret);
+	if(ret!=150)
+	{
+		printf("发送失败\n");
+		return EXIT_FAILURE;
+	}
+	printf("发送成功\n");
+	
+	sscanf(buf,"150 Ok to send data.\n%d",&ret);
+	if(ret!=226)
+	{
+		printf("传输异常\n");
+		return EXIT_FAILURE;	
+	}
+	printf("传输完成\n");	
+	close(cli_pasv);
+	return 0;
+}
+
+int ftp_RETR(int cli_sock,struct sockaddr_in* addr,const char* path)
+{
+	char buf[4096] = {};
+	size_t buf_size = sizeof(buf),ret;
+	ftp_pasv(cli_sock);
+	char ip[20] = {};
+	sprintf(ip,"%hhu.%hhu.%hhu.%hhu",ip1,ip2,ip3,ip4);
+	
+	struct sockaddr_in cli_addr = *addr;
+	short port = port1*256+port2;
+	int cli_pasv = socket(AF_INET,SOCK_STREAM,0);
+	cli_addr.sin_port = htons(port);
+	cli_addr.sin_addr.s_addr = inet_addr(ip);
+	socklen_t addrlen = sizeof(cli_addr);
+	
+	if(connect(cli_pasv,(SP)&cli_addr,addrlen))
+	{
+		perror("connect");
+		return EXIT_FAILURE;
+	}
+	
+	sprintf(buf,"RETR %s\n",path);
+	send(cli_sock,buf,strlen(buf),0);
+
+	recv(cli_sock,buf,buf_size,0);
+	printf("%s\n",buf);
+	sscanf(buf,"%d",&ret);	
+	if(ret!=150)
+	{	
+		printf("无效路径\n");
+		return EXIT_FAILURE;
+	}
+	
+	int fd = open(path,O_WRONLY|O_CREAT,0666);
+	if(0 > fd)
+	{
+		perror("open");
+		return EXIT_FAILURE;
+	}
+	printf("传输中\n");
+	
+	bzero(buf,buf_size);
+	
+	while(ret = recv(cli_pasv,buf,buf_size,0))
+	{
+		write(fd,buf,ret);
+	}
+
+	bzero(buf,buf_size);
+	recv(cli_sock,buf,buf_size,0);
+	sscanf(buf,"%d",&ret);
+	
+	if(ret!=226)
+	{
+		printf("传输异常\n");
+		return EXIT_FAILURE;
+	}
+	
+	printf("传输完毕\n");
+	
+	close(fd);
+	close(cli_pasv);
+	return 0;
+}
+	

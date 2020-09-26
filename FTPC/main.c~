@@ -1,0 +1,94 @@
+#include "ftp.h"
+
+int main(int argc,const char* argv[])
+{
+	int cli_sock = socket(AF_INET,SOCK_STREAM,0);	
+	if(0 > cli_sock)
+	{
+		perror("socket");
+		return EXIT_FAILURE;
+	}
+	printf("%d\n",cli_sock);
+	struct sockaddr_in cli_addr = {};
+	cli_addr.sin_family = AF_INET;
+	cli_addr.sin_port = htons(21);
+	//cli_addr.sin_addr.s_addr = inet_addr(argv[1]);
+	cli_addr.sin_addr.s_addr = inet_addr(IP);
+	socklen_t addrlen = sizeof(cli_addr);
+	
+	if(connect(cli_sock,(SP)&cli_addr,addrlen))
+	{
+		perror("connect");
+		return EXIT_FAILURE;
+	}
+
+	if(ftp_login(cli_sock)) return 0;
+	
+/*	char ip[20] = {};
+	sprintf(ip,"%hhu.%hhu.%hhu.%hhu",ip1,ip2,ip3,ip4);
+	struct sockaddr_in cli_addr = *addr;
+	short port = port1*256+port2;
+	int cli_pasv = socket(AF_INET,SOCK_STREAM,0);
+	cli_addr.sin_port = htons(port);
+	cli_addr.sin_addr.s_addr = inet_addr(ip);
+	socklen_t addrlen = sizeof(cli_addr);
+	
+	if(connect(cli_pasv,(SP)&cli_addr,addrlen))
+	{
+		perror("connect");
+		return EXIT_FAILURE;
+	}*/
+
+	char buf[4096] = {},cmd[256] = {},flag = 1;
+	size_t buf_size = sizeof(buf),ret,cnt;	
+	while(flag)
+	{
+		bzero(cmd,sizeof(cmd));
+		bzero(buf,buf_size);
+		
+		stdin->_IO_read_ptr = stdin->_IO_read_end;
+		printf("ftp>>");
+		scanf("%s",cmd);
+		if(getchar() == ' ') scanf("%s",buf);
+		
+		if(0 == strcmp("bye",cmd)) break;
+	
+		switch(ftp_command(cmd))
+		{
+			case LS_L:
+				ftp_LS_L(cli_sock,&cli_addr,buf);
+				//printf("LS_L\n");
+				break;	
+			case PWD:
+				ftp_PWD(cli_sock);
+				//printf("PWD\n");
+				break;
+			case MKD:
+				ftp_MKD(cli_sock,buf);
+				//printf("MKD\n");
+				break;
+			case CWD:
+				ftp_CWD(cli_sock,buf);
+				//printf("CWD\n");
+				break;
+			case STOR:
+				ftp_STOR(cli_sock,&cli_addr,buf);
+				//printf("STOR\n");
+				break;
+			case RETR:
+				ftp_RETR(cli_sock,&cli_addr,buf)
+				//printf("RETR\n");
+				break;
+				
+			default:
+				printf("无效命令\n");
+				break;
+		}		
+	}
+	
+
+	close(cli_sock);
+	printf("拜拜\n");
+	return 0;
+}
+
